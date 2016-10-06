@@ -20,10 +20,11 @@ BLACK = (0, 0, 0)
 
 class Wa_Tor(object):
     
-    def __init__(self, w=100, h=50, fish=500, sharks=500, use_image=True):
+    def __init__(self, w=100, h=80, fish=500, sharks=500, use_image=True):
         
         self.w = w
         self.h = h
+        self.max_fish = self.w * self.h
         
         self.map = [[0 for y in range(self.h)] for x in range(self.w)]
         
@@ -45,6 +46,7 @@ class Wa_Tor(object):
         
         self.image = pygame.Surface((self.w*self.tile_w, self.h*self.tile_h))
         self.rect = self.image.get_rect()
+        self.rect.bottomleft = (0, SCREENHEIGHT)
         self.image.fill(WATER)
         self.image = self.image.convert()
         
@@ -54,10 +56,10 @@ class Wa_Tor(object):
         
         self.graph = Graph(self)
         
-        self.fish_grow_threshold = 10
-        self.fish_energy = 3
-        self.shark_grow_threshold = 8
-        self.shark_energy_cap = 10
+        self.fish_grow_threshold = 5
+        self.fish_energy = 4
+        self.shark_grow_threshold = 5
+        self.shark_energy_cap = None
         
         self.seed_fish()
     
@@ -68,10 +70,6 @@ class Wa_Tor(object):
         for y in range(self.h):
             for x in range(self.w):
                 coords.append((x, y))
-        
-        print len(coords)
-        print self.fish,
-        print self.sharks
     
         selection = sample(coords, self.fish+self.sharks)
         fish_coords = selection[:self.fish]
@@ -135,6 +133,15 @@ class Wa_Tor(object):
                 elif self.is_fish((x, y)):
                     fish.append((x, y))
                     
+        
+        self.fish = len(fish)
+        self.sharks = len(sharks)
+        
+        if self.fish == self.max_fish:
+            self.end()
+        elif self.fish == 0 and self.sharks == 0:
+            self.end()
+        
         self.update_fish(fish)
         self.update_sharks(sharks)
         
@@ -151,7 +158,6 @@ class Wa_Tor(object):
                 self.map[x][y] = 1
                 nx, ny = choice(adj)
                 self.map[nx][ny] = 1
-                self.fish += 1
             else:
                 nx, ny = choice(adj)
                 self.map[nx][ny] = self.map[x][y] + 1
@@ -172,7 +178,6 @@ class Wa_Tor(object):
                 
                 new = (new_energy, old[1]+1)
                 self.map[nx][ny] = new
-                self.fish -= 1
                 
             elif not adj_fish:  # no food, move instead
                 adj = self.get_free_adj_spot((x, y))
@@ -183,12 +188,10 @@ class Wa_Tor(object):
                 new = (old[0]-1, old[1]+1)
                 if new[0] <= 0:  # out of energy, starve
                     self.map[x][y] = 0
-                    self.sharks -= 1
                     continue
                 self.map[nx][ny] = new
                     
             if self.map[nx][ny][1] == self.shark_grow_threshold and (x, y) != (nx, ny):
-                self.sharks += 1
                 self.map[x][y] = (self.fish_energy, 1)
                 post_birth = (new[0], 1)
                 self.map[nx][ny] = post_birth
@@ -231,6 +234,8 @@ class Wa_Tor(object):
                 
         return adj
 
+    def end(self):
+        pass
         
 class Graph(object):
     
@@ -242,42 +247,49 @@ class Graph(object):
         self.shark_data = {}
         
         self.w = self.sim.w * self.sim.tile_w
-        self.h = SCREENHEIGHT - self.sim.h * self.sim.tile_h
+        self.h = SCREENHEIGHT - (self.sim.h * self.sim.tile_h) - 10
+        
+        self.max_pixel = float(self.sim.max_fish)
+        
+        self.slide = 0
         
         self.image = pygame.Surface((self.w, self.h))
         self.image.fill(BLACK)
         self.image = self.image.convert()
         self.rect = self.image.get_rect()
-        self.rect.topleft = (0, self.sim.h* self.sim.tile_h)
-        
-        self.red_dot = pygame.Surface((1, 1))
-        self.red_dot.fill(RED)
-        self.red_dot = self.red_dot.convert()
-        self.dot_rect = self.red_dot.get_rect()
-        
-        self.yellow_dot = pygame.Surface((1, 1))
-        self.yellow_dot.fill(YELLOW)
-        self.yellow_dot = self.yellow_dot.convert()
+        self.rect.topleft = (0, 0)
         
     def convert_to_pixel(self, value):
-        c = (value / 10000.0) * self.h
+        c = (value / self.max_pixel) * (self.h-10) * -1 + self.h -1
         return c
         
     def draw_fish(self, chronon):
-        x = chronon
-        y = self.fish_data[chronon]
-        self.dot_rect.topleft = (x, y)
-        self.image.blit(self.yellow_dot, self.dot_rect)
+        x1 = chronon - 1
+        try: 
+            y1 = self.fish_data[chronon-1]
+        except KeyError:
+            y1 = self.h
+            
+        x2 = chronon
+        y2 = self.fish_data[chronon]
+        
+        pygame.draw.line(self.image, YELLOW, (x1, y1), (x2, y2))
     
     def draw_shark(self, chronon):
-        x = chronon
-        y = self.shark_data[chronon]
-        self.dot_rect.topleft = (x, y)
-        self.image.blit(self.red_dot, self.dot_rect)
+        x1 = chronon - 1
+        try: 
+            y1 = self.shark_data[chronon-1]
+        except KeyError:
+            y1 = self.h
+            
+        x2 = chronon
+        y2 = self.shark_data[chronon]
+        
+        pygame.draw.line(self.image, RED, (x1, y1), (x2, y2))
     
     def update(self):
         
-        print "fish: %s, sharks: %s" % (self.sim.fish, self.sim.sharks)
+        # print "fish: %s, sharks: %s" % (self.sim.fish, self.sim.sharks)
         
         self.fish_data[self.sim.chronon] = self.convert_to_pixel(self.sim.fish)
         self.shark_data[self.sim.chronon] = self.convert_to_pixel(self.sim.sharks)
@@ -287,6 +299,10 @@ class Graph(object):
         
     def draw(self):
         return self.image, self.rect
+        
+    def slide_graph(self):
+        new = pygame.Surface((self.w, self.h))
+        
         
 
 def draw_demo(screen, sim):
